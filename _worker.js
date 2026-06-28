@@ -781,18 +781,23 @@ const establishTcpConnection = async (parsedRequest, request) => {
 const manualPipe = async (readable, writable, close) => {
     const safeBufferSize = bufferSize - maxChunkLen, fastFlushOffset = Math.max((bufferSize / flushTime) << 1, maxChunkLen << 1);
     let buffer = new ArrayBuffer(bufferSize), spareBuffer = new ArrayBuffer(maxChunkLen), bufferView = new Uint8Array(buffer);
-    let offset = 0, totalBytes = 0, time = 2, timerId = null, resume = null, isReading = false, needsFlush = false, protectFlush = false;
+    let offset = 0, totalBytes = 0, time = 0, timerId = null, resume = null, isReading = false, needsFlush = false, protectFlush = false, flushDelayCount = 0;
     let isClose = false, fastFlush = true;
-    const flushBuffer = () => {
+    const flushBuffer = (force = false) => {
         if (isReading) return needsFlush = true;
         fastFlush = offset < fastFlushOffset;
+        if (!force && offset > 0 && offset < maxChunkLen && !isClose && flushDelayCount < 2) {
+            flushDelayCount++, needsFlush = false;
+            timerId && clearTimeout(timerId), timerId = setTimeout(flushBuffer, 0);
+            return;
+        }
         if (offset > 0 && !isClose) {
             offset > safeBufferSize
                 ? (writable.send(bufferView.subarray(0, offset)), buffer = new ArrayBuffer(bufferSize), bufferView = new Uint8Array(buffer))
                 : writable.send(bufferView.slice(0, offset));
             offset = 0;
         }
-        needsFlush = false, protectFlush = false, timerId && (clearTimeout(timerId), timerId = null), resume?.(), resume = null;
+        needsFlush = false, protectFlush = false, flushDelayCount = 0, timerId && (clearTimeout(timerId), timerId = null), resume?.(), resume = null;
     };
     const reader = readable.getReader({mode: 'byob'});
     try {
@@ -811,13 +816,13 @@ const manualPipe = async (readable, writable, close) => {
                 flushBuffer();
             } else {
                 if (fastFlush || chunkLen < 28672) {
-                    totalBytes = 0, time = 2;
+                    totalBytes = 0, time = 0;
                 } else if ((totalBytes += chunkLen) > startThreshold) time = flushTime;
                 timerId ||= setTimeout(flushBuffer, time), protectFlush = chunkLen < maxChunkLen;
                 offset > safeBufferSize && (time === flushTime ? await new Promise(r => resume = r) : flushBuffer());
             }
         }
-    } catch {close?.(), isClose = true} finally {isReading = false, flushBuffer()}
+    } catch {close?.(), isClose = true} finally {isReading = false, flushBuffer(true)}
 };
 const createBufferedTcpWriter = (tcpWriter, close) => {
     const queue = new Array(4096);
