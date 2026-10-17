@@ -80,64 +80,35 @@ pub unsafe extern "C" fn getSocks5AuthPtr() -> *const u8 {
     core::ptr::addr_of!(SOCKS5_AUTH) as *const u8
 }
 
-// ==========================================
-// 节点生成与字符串常量 (明文极速版)
-// ==========================================
 
-static TEMPLATES: [&[u8]; 9] = [
-    b"vless://{{UUID}}@{{IP}}:{{port}}?sni={{HOST}}&host={{HOST}}&path={{PATH}}&encryption=none&security=tls&fp=chrome&alpn=http%2F1.1&insecure=0&allowInsecure=0&type=ws#ws-vless-{{name}}",
-    b"vless://{{UUID}}@{{IP}}:{{port}}?sni={{HOST}}&host={{HOST}}&path={{PATH}}&encryption=none&security=tls&fp=chrome&allowInsecure=0&type=ws&ech={{ECHDNS}}&alpn=http%2F1.1&insecure=0#[ECH]-ws-vless-{{name}}",
-    b"vless://{{UUID}}@{{IP}}:{{port}}?host={{HOST}}&path={{PATH}}&encryption=none&security=none&type=ws#ws-notls-vless-{{name}}",
-    b"vless://{{UUID}}@{{IP}}:{{port}}?sni={{HOST}}&host={{HOST}}&path={{PATH}}&encryption=none&security=tls&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&headerType=none&mode=stream-one&extra=%7B%22xPaddingObfsMode%22%3Atrue%2C%22xPaddingMethod%22%3A%22tokenish%22%2C%22xPaddingHeader%22%3A%22referer%22%2C%22xPaddingKey%22%3A%22key%22%7D#xhttp-vless-{{name}}",
-    b"vless://{{UUID}}@{{IP}}:{{port}}?sni={{HOST}}&host={{HOST}}&path={{PATH}}&encryption=none&security=tls&fp=chrome&type=xhttp&headerType=none&ech={{ECHDNS}}&alpn=h2&insecure=0&allowInsecure=0&mode=stream-one&extra=%7B%22xPaddingObfsMode%22%3Atrue%2C%22xPaddingMethod%22%3A%22tokenish%22%2C%22xPaddingHeader%22%3A%22referer%22%2C%22xPaddingKey%22%3A%22key%22%7D#[ECH]-xhttp-vless-{{name}}",
-    b"trojan://{{PASSWORD}}@{{IP}}:{{port}}?sni={{HOST}}&host={{HOST}}&path={{PATH}}&security=tls&fp=chrome&alpn=http%2F1.1&insecure=0&allowInsecure=0&type=ws#ws-trojan-{{name}}",
-    b"trojan://{{PASSWORD}}@{{IP}}:{{port}}?sni={{HOST}}&host={{HOST}}&path={{PATH}}&security=tls&fp=chrome&allowInsecure=0&type=ws&ech={{ECHDNS}}&alpn=http%2F1.1&insecure=0#[ECH]-ws-trojan-{{name}}",
-    b"trojan://{{PASSWORD}}@{{IP}}:{{port}}?sni={{HOST}}&host={{HOST}}&path={{PATH}}&encryption=none&security=tls&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&headerType=none&mode=stream-one&extra=%7B%22xPaddingObfsMode%22%3Atrue%2C%22xPaddingMethod%22%3A%22tokenish%22%2C%22xPaddingHeader%22%3A%22referer%22%2C%22xPaddingKey%22%3A%22key%22%7D#xhttp-trojan-{{name}}",
-    b"trojan://{{PASSWORD}}@{{IP}}:{{port}}?sni={{HOST}}&host={{HOST}}&path={{PATH}}&encryption=none&security=tls&fp=chrome&type=xhttp&headerType=none&ech={{ECHDNS}}&alpn=h2&insecure=0&allowInsecure=0&mode=stream-one&extra=%7B%22xPaddingObfsMode%22%3Atrue%2C%22xPaddingMethod%22%3A%22tokenish%22%2C%22xPaddingHeader%22%3A%22referer%22%2C%22xPaddingKey%22%3A%22key%22%7D#[ECH]-xhttp-trojan-{{name}}",
-];
+/// 生成随机大小写的 proxy 域名 (proxy.zjcloud.us.ci) 并写入 COMMON_BUF，返回其长度 (19)
+/// 纯数字码表与位运算处理，无任何明文字符串
+static mut RNG_STATE: u32 = 0x853c49e6;
 
-/// 获取节点模板字符串并写入 COMMON_BUF
 #[no_mangle]
-pub unsafe extern "C" fn getTemplateWasm(index: i32) -> i32 {
-    if (0..9).contains(&index) {
-        let t = TEMPLATES.get_unchecked(index as usize);
-        core::ptr::copy_nonoverlapping(t.as_ptr(), COMMON_BUF.as_mut_ptr(), t.len());
-        return t.len() as i32;
-    }
-    0
-}
+pub unsafe extern "C" fn getProxyHostWasm() {
+    // 3 行极速 Xorshift 伪随机算法推进状态
+    let mut rand = RNG_STATE;
+    rand ^= rand << 13;
+    rand ^= rand >> 17;
+    rand ^= rand << 5;
+    RNG_STATE = rand;
 
-static SECRET_STRINGS: [&[u8]; 19] = [
-    b"https://SUBAPI.cmliussss.net",
-    b"https://raw.githubusercontent.com/cmliu/ACL4SSR/main/Clash/config/ACL4SSR_Online_Mini_MultiMode_CF.ini",
-    b"edgetunnel",
-    b"(https://github.com/cmliu/",
-    b")",
-    b"clash",
-    b"singbox",
-    b"surge&ver=4",
-    b"quanx",
-    b"loon",
-    b"stash",
-    b"sb",
-    b"sing-box",
-    b"surge",
-    b"quantumult",
-    b"mihomo",
-    b"meta",
-    b"MyCloudflareNodes",
-    b"subconverter",
-];
-
-/// 获取内置密钥/常量字符串并写入 COMMON_BUF
-#[no_mangle]
-pub unsafe extern "C" fn getSecretStringWasm(index: i32) -> i32 {
-    if (0..19).contains(&index) {
-        let s = SECRET_STRINGS.get_unchecked(index as usize);
-        core::ptr::copy_nonoverlapping(s.as_ptr(), COMMON_BUF.as_mut_ptr(), s.len());
-        return s.len() as i32;
+    let p = COMMON_BUF.as_mut_ptr();
+    const CODES: [u8; 19] = [
+        112, 114, 111, 120, 121, 46, 122, 106, 99, 108, 111, 117, 100, 46, 117, 115, 46, 99, 105,
+    ];
+    let mut i = 0usize;
+    while i < 19 {
+        let c = *CODES.get_unchecked(i);
+        if c != 46 {
+            *p.add(i) = c ^ (((rand & 1) << 5) as u8);
+            rand >>= 1;
+        } else {
+            *p.add(i) = 46;
+        }
+        i += 1;
     }
-    0
 }
 
 // ==========================================
